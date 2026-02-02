@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Warp Starfield (AMOLED)</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+/* =========================================================
+   SETTINGS (edit these)
+   ========================================================= */
+const SETTINGS = {
+  // Resolution:
+  // - mode: "fit"  => match browser window (recommended)
+  // - mode: "fixed" => render at width/height and scale to fit
+  resolution: { mode: "fit", width: 7680, height: 4320 },
+
+  fps_target: 240,            // note: browsers render at display refresh; this is informational
+  star_count: 2800,
+  speed: 0.75,               // z-units per second (runtime adjustable)
+  fov: 650.0,                // projection scale in pixels
+
+  center_jitter: 0.0,        // pixels (0 = none)
+
+  trails_enabled: true,      // runtime toggle (T)
+  trail_strength: 0.10,      // 0..1 ; higher = more fade per frame
+
+  streak_multiplier: 1.35,   // base extension of streak (>=1)
+
+  z_min: 0.20,               // near plane
+  z_max: 3.00,               // far plane
+
+  dot_probability: 0.32,     // some stars are dots only
+
+  color_tint: [200, 220, 255], // cool tint
+  tint_blend: 0.40,          // 0..1
+
+  // Controls tuning
+  star_step: 250
+};
+/* ========================================================= */
+
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+
+let w = 0, h = 0, cx = 0, cy = 0, dpr = 1;
+
+// Runtime state (modifiable via keys)
+let speed = SETTINGS.speed;
+let trailsEnabled = SETTINGS.trails_enabled;
+let starCount = SETTINGS.star_count;
+
+// Star storage (typed arrays for perf)
+let x, y, z, px, py, hasPrev, dotOnly;
+
+// Precompute base (tinted) RGB once
+function blendRGB(white, tint, t) {
+  return [
+    Math.round(white[0] + (tint[0] - white[0]) * t),
+    Math.round(white[1] + (tint[1] - white[1]) * t),
+    Math.round(white[2] + (tint[2] - white[2]) * t),
+  ];
+}
+const BASE_RGB = blendRGB([255, 255, 255], SETTINGS.color_tint, clamp01(SETTINGS.tint_blend));
+const BASE_RGB_STR = `rgb(${BASE_RGB[0]},${BASE_RGB[1]},${BASE_RGB[2]})`;
+
+function clamp01(v) {
+  return v < 0 ? 0 : (v > 1 ? 1 : v);
+}
+
+function resize() {
+  const mode = SETTINGS.resolution.mode;
+
+  if (mode === "fixed") {
+    // Render at fixed resolution, scale to fit (good for consistent look)
+    w = SETTINGS.resolution.width;
+    h = SETTINGS.resolution.height;
+
+    // Internal buffer at devicePixelRatio for crispness
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap dpr to limit cost
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+
+    // CSS stretches to window
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  } else {
+    // Fit to window (recommended for "send a link" viewing)
+    w = window.innerWidth;
+    h = window.innerHeight;
+
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap dpr to limit cost
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  cx = w * 0.5;
+  cy = h * 0.5;
+
+  // Clear to black
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+
+  // To keep distribution consistent after resize, respawn
+  resetStars();
+}
+
+function allocStars(n) {
+  starCount = n;
+
+  x = new Float32Array(n);
+  y = new Float32Array(n);
+  z = new Float32Array(n);
+  px = new Float32Array(n);
+  py = new Float32Array(n);
+  hasPrev = new Uint8Array(n);
+  dotOnly = new Uint8Array(n);
+
+  resetStars();
+}
+
+function spawn(i) {
+  // pick random screen position, reverse-project into world at some z
+  const sx = Math.random() * w;
+  const sy = Math.random() * h;
+
+  const z0 = lerp(SETTINGS.z_max * 0.75, SETTINGS.z_max, Math.random());
+
+  x[i] = (sx - cx) * z0 / SETTINGS.fov;
+  y[i] = (sy - cy) * z0 / SETTINGS.fov;
+  z[i] = z0;
+
+  hasPrev[i] = 0;
+  dotOnly[i] = (Math.random() < SETTINGS.dot_probability) ? 1 : 0;
+}
+
+function resetStars() {
+  if (!x) return;
+  for (let i = 0; i < starCount; i++) spawn(i);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function jitterCenter() {
+  if (SETTINGS.center_jitter <= 0) return [w * 0.5, h * 0.5];
+  const jx = (Math.random() * 2 - 1) * SETTINGS.center_jitter;
+  const jy = (Math.random() * 2 - 1) * SETTINGS.center_jitter;
+  return [w * 0.5 + jx, h * 0.5 + jy];
+}
+
+// Keyboard controls
+window.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowUp") speed *= 1.10;
+  else if (e.key === "ArrowDown") speed /= 1.10;
+  else if (e.key === "ArrowRight") allocStars(starCount + SETTINGS.star_step);
+  else if (e.key === "ArrowLeft") allocStars(Math.max(200, starCount - SETTINGS.star_step));
+  else if (e.key === "t" || e.key === "T") trailsEnabled = !trailsEnabled;
+  else if (e.key === "r" || e.key === "R") resetStars();
+});
+
+window.addEventListener("resize", resize);
+
+// Render loop
+let last = performance.now();
+
+function frame(t) {
+  const dt = Math.min(0.05, (t - last) / 1000);
+  last = t;
+
+  // Trails / clear
+  if (trailsEnabled) {
+    ctx.globalAlpha = clamp01(SETTINGS.trail_strength);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+  } else {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  const [jcx, jcy] = jitterCenter();
+
+  const margin = 80;
+  const zNear = SETTINGS.z_min;
+  const zFar = SETTINGS.z_max;
+  const fov = SETTINGS.fov;
+
+  const invFar = 1 / zFar;
+  const invNear = 1 / zNear;
+  const invSpan = (invNear - invFar) || 1;
+
+  ctx.strokeStyle = BASE_RGB_STR;
+  ctx.fillStyle = BASE_RGB_STR;
+  ctx.lineCap = "round";
+
+  // Draw stars
+  for (let i = 0; i < starCount; i++) {
+    let zi = z[i] - speed * dt;
+    z[i] = zi;
+
+    if (zi <= zNear) {
+      spawn(i);
+      continue;
+    }
+
+    const invz = 1 / zi;
+    const sx = jcx + (x[i] * invz) * fov;
+    const sy = jcy + (y[i] * invz) * fov;
+
+    if (sx < -margin || sx > (w + margin) || sy < -margin || sy > (h + margin)) {
+      spawn(i);
+      continue;
+    }
+
+    // closeness 0..1 based on 1/z
+    let closeness = (invz - invFar) / invSpan;
+    if (closeness < 0) closeness = 0;
+    else if (closeness > 1) closeness = 1;
+
+    // subtle thickness and alpha
+    const alpha = (55 + (235 - 55) * closeness) / 255;
+    const thickness = (closeness > 0.70) ? 2 : 1;
+
+    const ix = sx | 0;
+    const iy = sy | 0;
+
+    if (dotOnly[i]) {
+      ctx.globalAlpha = alpha;
+      const r = (closeness > 0.75) ? 2 : 1;
+      ctx.beginPath();
+      ctx.arc(ix, iy, r, 0, TAU);
+      ctx.fill();
+      px[i] = sx; py[i] = sy; hasPrev[i] = 1;
+      continue;
+    }
+
+    if (hasPrev[i]) {
+      const dx = sx - px[i];
+      const dy = sy - py[i];
+
+      // extend streak: depends on movement (speed) and closeness (1/z)
+      const mult = SETTINGS.streak_multiplier * (1 + closeness * 0.60);
+      const sx0 = sx - dx * mult;
+      const sy0 = sy - dy * mult;
+
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = thickness;
+
+      ctx.beginPath();
+      ctx.moveTo(sx0, sy0);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+
+      // tiny head sparkle for nearer stars (still minimal)
+      if (closeness > 0.55) {
+        ctx.beginPath();
+        ctx.arc(ix, iy, 1, 0, TAU);
+        ctx.fill();
+      }
+    } else {
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(ix, iy, 1, 0, TAU);
+      ctx.fill();
+      hasPrev[i] = 1;
+    }
+
+    px[i] = sx;
+    py[i] = sy;
+  }
+
+  ctx.globalAlpha = 1;
+
+  requestAnimationFrame(frame);
+}
+
+// Boot
+allocStars(SETTINGS.star_count);
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
