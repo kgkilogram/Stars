@@ -2,312 +2,640 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Warp Starfield (AMOLED)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>Valentine Warp</title>
   <style>
+    :root{
+      --bg: #000000;
+      --card: #ffffff;
+      --text: #111111;
+      --muted: rgba(0,0,0,0.55);
+      --yes: #ff3b7a;
+      --yes2:#ff5aa0;
+      --no: #e9e9ee;
+
+      --radius: 24px;
+      --shadow: 0 18px 55px rgba(0,0,0,0.35);
+      --pad: 28px;
+
+      --btn-h: 44px;
+      --btn-w: 140px;
+      --gap: 14px;
+    }
+
     html, body {
       margin: 0;
       width: 100%;
       height: 100%;
-      background: #000;
+      background: var(--bg);
       overflow: hidden;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
     }
-    canvas {
-      display: block;
+
+    /* Starfield canvas behind everything */
+    #star {
+      position: fixed;
+      inset: 0;
       width: 100%;
       height: 100%;
+      display: block;
       background: #000;
+      z-index: 0;
+    }
+
+    /* Subtle glow behind card (AMOLED vibe) */
+    .glow {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        radial-gradient(closest-side at 50% 45%, rgba(255, 60, 140, 0.14), rgba(0,0,0,0) 65%),
+        radial-gradient(closest-side at 52% 55%, rgba(120, 190, 255, 0.10), rgba(0,0,0,0) 70%);
+      filter: blur(0px);
+    }
+
+    /* Center overlay */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 2;
+    }
+
+    .card {
+      width: min(520px, 92vw);
+      background: var(--card);
+      color: var(--text);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: var(--pad);
+      position: relative;
+      overflow: hidden; /* keep runaway button inside visual */
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 10px;
+      user-select: none;
+    }
+
+    /* Minimal teddy icon (SVG) */
+    .teddy {
+      width: 60px;
+      height: 60px;
+      filter: drop-shadow(0 8px 14px rgba(0,0,0,0.10));
+    }
+
+    h1 {
+      margin: 8px 0 18px;
+      font-size: clamp(24px, 3.4vw, 34px);
+      letter-spacing: -0.02em;
+      text-align: center;
+      line-height: 1.12;
+      font-weight: 800;
+    }
+
+    .helper {
+      margin-top: 10px;
+      text-align: center;
+      color: rgba(0,0,0,0.62);
+      font-size: 14px;
+      user-select: none;
+    }
+
+    /* Button stage */
+    .btn-stage {
+      position: relative;
+      height: calc(var(--btn-h) + 120px);
+      margin-top: 4px;
+    }
+
+    /* Base button styling */
+    .btn {
+      height: var(--btn-h);
+      min-width: var(--btn-w);
+      padding: 0 18px;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 16px;
+      line-height: var(--btn-h);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      transform-origin: center center;
+      will-change: transform, left, top;
+    }
+
+    /* Yes button: pill, gradient, gentle shadow */
+    #yesBtn {
+      position: absolute;
+      left: 50%;
+      top: 32px;
+      transform: translate(-50%, 0) scale(1);
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--yes), var(--yes2));
+      color: #fff;
+      box-shadow:
+        0 10px 22px rgba(255, 45, 120, 0.30),
+        0 2px 0 rgba(255,255,255,0.35) inset;
+      transition: transform 160ms ease-out;
+    }
+
+    #yesBtn:active { transform: translate(-50%, 0) scale(var(--yes-scale, 1)); filter: brightness(0.98); }
+
+    /* No button: absolute within stage, light gray, cannot be clicked */
+    #noBtn {
+      position: absolute;
+      left: 50%;
+      top: 32px;
+      transform: translate(calc(-50% + var(--gap) + var(--btn-w)), 0);
+      border-radius: 14px;
+      background: var(--no);
+      color: rgba(0,0,0,0.75);
+      box-shadow: 0 10px 18px rgba(0,0,0,0.10);
+      pointer-events: none; /* NEVER clickable */
+      transition: left 160ms ease-out, top 160ms ease-out;
+    }
+
+    /* Final takeover state */
+    .final {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: clamp(28px, 4.5vw, 44px);
+      background: radial-gradient(closest-side at 50% 45%, rgba(255,70,150,0.18), rgba(255,255,255,1) 60%);
+      opacity: 0;
+      transform: scale(0.98);
+      transition: opacity 220ms ease-out, transform 220ms ease-out;
+      pointer-events: none;
+    }
+    .final.show {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* Small footer hint (optional) */
+    .hint {
+      margin-top: 14px;
+      text-align: center;
+      color: rgba(0,0,0,0.45);
+      font-size: 12px;
+      user-select: none;
+    }
+
+    @media (max-width: 420px) {
+      :root { --pad: 22px; --btn-w: 132px; --btn-h: 42px; }
+      .btn-stage { height: calc(var(--btn-h) + 130px); }
     }
   </style>
 </head>
+
 <body>
-<canvas id="c"></canvas>
+  <canvas id="star"></canvas>
+  <div class="glow"></div>
+
+  <div class="overlay">
+    <div class="card" id="card">
+      <div class="top" aria-hidden="true">
+        <!-- Minimal teddy (inline SVG, no external deps) -->
+        <svg class="teddy" viewBox="0 0 64 64" role="img" aria-label="teddy">
+          <defs>
+            <linearGradient id="g" x1="0" x2="1">
+              <stop offset="0" stop-color="#ff4d8d"/>
+              <stop offset="1" stop-color="#ff88b9"/>
+            </linearGradient>
+          </defs>
+          <circle cx="18" cy="18" r="10" fill="url(#g)" opacity="0.35"/>
+          <circle cx="46" cy="18" r="10" fill="url(#g)" opacity="0.35"/>
+          <circle cx="32" cy="30" r="20" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="2"/>
+          <circle cx="24" cy="28" r="3.2" fill="#111"/>
+          <circle cx="40" cy="28" r="3.2" fill="#111"/>
+          <path d="M30 34c1.6 2 2.4 2 4 0" stroke="#111" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M26 40c4 5 8 5 12 0" stroke="url(#g)" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.9"/>
+        </svg>
+      </div>
+
+      <h1>Will you be my valentine?</h1>
+
+      <div class="btn-stage" id="stage">
+        <button class="btn" id="yesBtn" type="button">Yes</button>
+        <button class="btn" id="noBtn" type="button" aria-hidden="true">No</button>
+      </div>
+
+      <div class="helper" id="helper">“No” seems a bit shy 😈</div>
+      <div class="hint">Tip: try to click “No”.</div>
+
+      <div class="final" id="final">Yay! 💖</div>
+    </div>
+  </div>
 
 <script>
 /* =========================================================
-   SETTINGS (edit these)
+   STARFIELD (3D projection, streaks, slow warp)
    ========================================================= */
-const SETTINGS = {
-  // Resolution:
-  // - mode: "fit"  => match browser window (recommended)
-  // - mode: "fixed" => render at width/height and scale to fit
-  resolution: { mode: "fit", width: 7680, height: 4320 },
+(() => {
+  const canvas = document.getElementById("star");
+  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
-  fps_target: 240,            // note: browsers render at display refresh; this is informational
-  star_count: 2800,
-  speed: 0.75,               // z-units per second (runtime adjustable)
-  fov: 650.0,                // projection scale in pixels
+  // Settings tuned for AMOLED cleanliness
+  const S = {
+    starCount: 2200,
+    speed: 0.60,            // slow
+    fov: 650,
+    zMin: 0.20,
+    zMax: 3.00,
+    trailStrength: 0.12,    // overlay alpha (higher = more fade)
+    streakMultiplier: 1.25,
+    dotProbability: 0.30,
+    coolTint: [190, 215, 255],
+    tintChance: 0.22,
+    dprCap: 2
+  };
 
-  center_jitter: 0.0,        // pixels (0 = none)
+  let w = 0, h = 0, cx = 0, cy = 0, dpr = 1;
 
-  trails_enabled: true,      // runtime toggle (T)
-  trail_strength: 0.10,      // 0..1 ; higher = more fade per frame
+  // Typed arrays for performance
+  let x, y, z, px, py, hasPrev, dotOnly, tinted;
 
-  streak_multiplier: 1.35,   // base extension of streak (>=1)
+  function clamp01(v){ return v < 0 ? 0 : (v > 1 ? 1 : v); }
+  function lerp(a,b,t){ return a + (b-a)*t; }
 
-  z_min: 0.20,               // near plane
-  z_max: 3.00,               // far plane
-
-  dot_probability: 0.32,     // some stars are dots only
-
-  color_tint: [200, 220, 255], // cool tint
-  tint_blend: 0.40,          // 0..1
-
-  // Controls tuning
-  star_step: 250
-};
-/* ========================================================= */
-
-const TAU = Math.PI * 2;
-
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-
-let w = 0, h = 0, cx = 0, cy = 0, dpr = 1;
-
-// Runtime state (modifiable via keys)
-let speed = SETTINGS.speed;
-let trailsEnabled = SETTINGS.trails_enabled;
-let starCount = SETTINGS.star_count;
-
-// Star storage (typed arrays for perf)
-let x, y, z, px, py, hasPrev, dotOnly;
-
-// Precompute base (tinted) RGB once
-function blendRGB(white, tint, t) {
-  return [
-    Math.round(white[0] + (tint[0] - white[0]) * t),
-    Math.round(white[1] + (tint[1] - white[1]) * t),
-    Math.round(white[2] + (tint[2] - white[2]) * t),
-  ];
-}
-const BASE_RGB = blendRGB([255, 255, 255], SETTINGS.color_tint, clamp01(SETTINGS.tint_blend));
-const BASE_RGB_STR = `rgb(${BASE_RGB[0]},${BASE_RGB[1]},${BASE_RGB[2]})`;
-
-function clamp01(v) {
-  return v < 0 ? 0 : (v > 1 ? 1 : v);
-}
-
-function resize() {
-  const mode = SETTINGS.resolution.mode;
-
-  if (mode === "fixed") {
-    // Render at fixed resolution, scale to fit (good for consistent look)
-    w = SETTINGS.resolution.width;
-    h = SETTINGS.resolution.height;
-
-    // Internal buffer at devicePixelRatio for crispness
-    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap dpr to limit cost
-    canvas.width = Math.floor(w * dpr);
-    canvas.height = Math.floor(h * dpr);
-
-    // CSS stretches to window
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  } else {
-    // Fit to window (recommended for "send a link" viewing)
+  function resize() {
     w = window.innerWidth;
     h = window.innerHeight;
 
-    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap dpr to limit cost
+    dpr = Math.max(1, Math.min(S.dprCap, window.devicePixelRatio || 1));
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
-
-    canvas.style.width = w + "px";
-    canvas.style.height = h + "px";
-
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
 
-  cx = w * 0.5;
-  cy = h * 0.5;
+    cx = w * 0.5;
+    cy = h * 0.5;
 
-  // Clear to black
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, w, h);
-
-  // To keep distribution consistent after resize, respawn
-  resetStars();
-}
-
-function allocStars(n) {
-  starCount = n;
-
-  x = new Float32Array(n);
-  y = new Float32Array(n);
-  z = new Float32Array(n);
-  px = new Float32Array(n);
-  py = new Float32Array(n);
-  hasPrev = new Uint8Array(n);
-  dotOnly = new Uint8Array(n);
-
-  resetStars();
-}
-
-function spawn(i) {
-  // pick random screen position, reverse-project into world at some z
-  const sx = Math.random() * w;
-  const sy = Math.random() * h;
-
-  const z0 = lerp(SETTINGS.z_max * 0.75, SETTINGS.z_max, Math.random());
-
-  x[i] = (sx - cx) * z0 / SETTINGS.fov;
-  y[i] = (sy - cy) * z0 / SETTINGS.fov;
-  z[i] = z0;
-
-  hasPrev[i] = 0;
-  dotOnly[i] = (Math.random() < SETTINGS.dot_probability) ? 1 : 0;
-}
-
-function resetStars() {
-  if (!x) return;
-  for (let i = 0; i < starCount; i++) spawn(i);
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function jitterCenter() {
-  if (SETTINGS.center_jitter <= 0) return [w * 0.5, h * 0.5];
-  const jx = (Math.random() * 2 - 1) * SETTINGS.center_jitter;
-  const jy = (Math.random() * 2 - 1) * SETTINGS.center_jitter;
-  return [w * 0.5 + jx, h * 0.5 + jy];
-}
-
-// Keyboard controls
-window.addEventListener("keydown", (e) => {
-  if (e.key === "ArrowUp") speed *= 1.10;
-  else if (e.key === "ArrowDown") speed /= 1.10;
-  else if (e.key === "ArrowRight") allocStars(starCount + SETTINGS.star_step);
-  else if (e.key === "ArrowLeft") allocStars(Math.max(200, starCount - SETTINGS.star_step));
-  else if (e.key === "t" || e.key === "T") trailsEnabled = !trailsEnabled;
-  else if (e.key === "r" || e.key === "R") resetStars();
-});
-
-window.addEventListener("resize", resize);
-
-// Render loop
-let last = performance.now();
-
-function frame(t) {
-  const dt = Math.min(0.05, (t - last) / 1000);
-  last = t;
-
-  // Trails / clear
-  if (trailsEnabled) {
-    ctx.globalAlpha = clamp01(SETTINGS.trail_strength);
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, w, h);
-  } else {
+
+    // Re-seed distribution on resize
+    initStars(S.starCount);
+  }
+
+  function initStars(n) {
+    x = new Float32Array(n);
+    y = new Float32Array(n);
+    z = new Float32Array(n);
+    px = new Float32Array(n);
+    py = new Float32Array(n);
+    hasPrev = new Uint8Array(n);
+    dotOnly = new Uint8Array(n);
+    tinted = new Uint8Array(n);
+
+    for (let i = 0; i < n; i++) spawn(i);
+  }
+
+  function spawn(i) {
+    // Spawn using random screen point then reverse-project into world
+    const sx = Math.random() * w;
+    const sy = Math.random() * h;
+    const z0 = lerp(S.zMax * 0.75, S.zMax, Math.random());
+
+    x[i] = (sx - cx) * z0 / S.fov;
+    y[i] = (sy - cy) * z0 / S.fov;
+    z[i] = z0;
+
+    hasPrev[i] = 0;
+    dotOnly[i] = (Math.random() < S.dotProbability) ? 1 : 0;
+    tinted[i] = (Math.random() < S.tintChance) ? 1 : 0;
+  }
+
+  let last = performance.now();
+
+  function draw(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+
+    // Trails: semi-transparent black overlay
+    ctx.globalAlpha = clamp01(S.trailStrength);
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+
+    // Prepare for star draw
     ctx.globalAlpha = 1;
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, w, h);
-  }
+    ctx.lineCap = "round";
 
-  const [jcx, jcy] = jitterCenter();
+    const margin = 80;
+    const invFar = 1 / S.zMax;
+    const invNear = 1 / S.zMin;
+    const invSpan = (invNear - invFar) || 1;
 
-  const margin = 80;
-  const zNear = SETTINGS.z_min;
-  const zFar = SETTINGS.z_max;
-  const fov = SETTINGS.fov;
+    for (let i = 0; i < z.length; i++) {
+      let zi = z[i] - S.speed * dt;
+      z[i] = zi;
 
-  const invFar = 1 / zFar;
-  const invNear = 1 / zNear;
-  const invSpan = (invNear - invFar) || 1;
+      if (zi <= S.zMin) { spawn(i); continue; }
 
-  ctx.strokeStyle = BASE_RGB_STR;
-  ctx.fillStyle = BASE_RGB_STR;
-  ctx.lineCap = "round";
+      const invz = 1 / zi;
+      const sx = cx + (x[i] * invz) * S.fov;
+      const sy = cy + (y[i] * invz) * S.fov;
 
-  // Draw stars
-  for (let i = 0; i < starCount; i++) {
-    let zi = z[i] - speed * dt;
-    z[i] = zi;
-
-    if (zi <= zNear) {
-      spawn(i);
-      continue;
-    }
-
-    const invz = 1 / zi;
-    const sx = jcx + (x[i] * invz) * fov;
-    const sy = jcy + (y[i] * invz) * fov;
-
-    if (sx < -margin || sx > (w + margin) || sy < -margin || sy > (h + margin)) {
-      spawn(i);
-      continue;
-    }
-
-    // closeness 0..1 based on 1/z
-    let closeness = (invz - invFar) / invSpan;
-    if (closeness < 0) closeness = 0;
-    else if (closeness > 1) closeness = 1;
-
-    // subtle thickness and alpha
-    const alpha = (55 + (235 - 55) * closeness) / 255;
-    const thickness = (closeness > 0.70) ? 2 : 1;
-
-    const ix = sx | 0;
-    const iy = sy | 0;
-
-    if (dotOnly[i]) {
-      ctx.globalAlpha = alpha;
-      const r = (closeness > 0.75) ? 2 : 1;
-      ctx.beginPath();
-      ctx.arc(ix, iy, r, 0, TAU);
-      ctx.fill();
-      px[i] = sx; py[i] = sy; hasPrev[i] = 1;
-      continue;
-    }
-
-    if (hasPrev[i]) {
-      const dx = sx - px[i];
-      const dy = sy - py[i];
-
-      // extend streak: depends on movement (speed) and closeness (1/z)
-      const mult = SETTINGS.streak_multiplier * (1 + closeness * 0.60);
-      const sx0 = sx - dx * mult;
-      const sy0 = sy - dy * mult;
-
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = thickness;
-
-      ctx.beginPath();
-      ctx.moveTo(sx0, sy0);
-      ctx.lineTo(sx, sy);
-      ctx.stroke();
-
-      // tiny head sparkle for nearer stars (still minimal)
-      if (closeness > 0.55) {
-        ctx.beginPath();
-        ctx.arc(ix, iy, 1, 0, TAU);
-        ctx.fill();
+      if (sx < -margin || sx > w + margin || sy < -margin || sy > h + margin) {
+        spawn(i); continue;
       }
-    } else {
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.arc(ix, iy, 1, 0, TAU);
-      ctx.fill();
-      hasPrev[i] = 1;
+
+      // closeness 0..1 based on 1/z
+      let closeness = (invz - invFar) / invSpan;
+      if (closeness < 0) closeness = 0;
+      else if (closeness > 1) closeness = 1;
+
+      // Subtle alpha/thickness
+      const a = (50 + (220 - 50) * closeness) / 255;
+      const thickness = (closeness > 0.72) ? 2 : 1;
+
+      // Color: mostly white, some cool tint
+      if (tinted[i]) {
+        const c = S.coolTint;
+        ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+        ctx.fillStyle   = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+      } else {
+        ctx.strokeStyle = `rgba(255,255,255,${a})`;
+        ctx.fillStyle   = `rgba(255,255,255,${a})`;
+      }
+
+      const ix = sx | 0;
+      const iy = sy | 0;
+
+      if (dotOnly[i]) {
+        const r = (closeness > 0.75) ? 2 : 1;
+        ctx.beginPath();
+        ctx.arc(ix, iy, r, 0, Math.PI * 2);
+        ctx.fill();
+        px[i] = sx; py[i] = sy; hasPrev[i] = 1;
+        continue;
+      }
+
+      if (hasPrev[i]) {
+        const dx = sx - px[i];
+        const dy = sy - py[i];
+
+        // Slightly extend streak behind motion; scale a bit with closeness
+        const mult = S.streakMultiplier * (1 + closeness * 0.55);
+        const sx0 = sx - dx * mult;
+        const sy0 = sy - dy * mult;
+
+        ctx.lineWidth = thickness;
+        ctx.beginPath();
+        ctx.moveTo(sx0, sy0);
+        ctx.lineTo(sx, sy);
+        ctx.stroke();
+
+        // Tiny head sparkle for closer stars
+        if (closeness > 0.55) {
+          ctx.beginPath();
+          ctx.arc(ix, iy, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.beginPath();
+        ctx.arc(ix, iy, 1, 0, Math.PI * 2);
+        ctx.fill();
+        hasPrev[i] = 1;
+      }
+
+      px[i] = sx;
+      py[i] = sy;
     }
 
-    px[i] = sx;
-    py[i] = sy;
+    requestAnimationFrame(draw);
   }
 
-  ctx.globalAlpha = 1;
+  window.addEventListener("resize", resize, { passive: true });
 
-  requestAnimationFrame(frame);
-}
+  resize();
+  requestAnimationFrame(draw);
+})();
 
-// Boot
-allocStars(SETTINGS.star_count);
-resize();
-requestAnimationFrame(frame);
+
+/* =========================================================
+   VALENTINE UI INTERACTIVITY
+   - No button runs away (8 directions, never clickable)
+   - Yes button grows by 1.25x per click; eventually takes over
+   ========================================================= */
+(() => {
+  const card = document.getElementById("card");
+  const stage = document.getElementById("stage");
+  const yesBtn = document.getElementById("yesBtn");
+  const noBtn = document.getElementById("noBtn");
+  const final = document.getElementById("final");
+  const helper = document.getElementById("helper");
+
+  // Runaway config
+  const PROXIMITY_PX = 80;   // cursor distance threshold
+  const MOVE_PX_MIN = 70;    // jump step
+  const MOVE_PX_MAX = 120;
+  const PAD = 14;            // inner padding boundary (stage)
+  const TRANS_MS = 160;      // 120-200ms
+  noBtn.style.transitionDuration = TRANS_MS + "ms";
+
+  // 8 directions: dx,dy (unit)
+  const DIRS = [
+    [ 0, -1], [ 0,  1], [-1,  0], [ 1,  0],
+    [-1, -1], [ 1, -1], [-1,  1], [ 1,  1],
+  ];
+
+  // Keep absolute positioning stable: compute base positions after layout
+  let yesScale = 1;
+
+  function rect(el) { return el.getBoundingClientRect(); }
+
+  function getStageBounds() {
+    const r = rect(stage);
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }
+
+  function getNoPos() {
+    // left/top are relative to stage
+    const left = parseFloat(getComputedStyle(noBtn).left || "0");
+    const top  = parseFloat(getComputedStyle(noBtn).top  || "0");
+    return { left, top };
+  }
+
+  function setNoPos(left, top) {
+    noBtn.style.left = left + "px";
+    noBtn.style.top = top + "px";
+  }
+
+  function initNoPositionNearYes() {
+    // Place No near the Yes in initial layout, but inside stage
+    const st = getStageBounds();
+    const nb = rect(noBtn);
+    const yb = rect(yesBtn);
+
+    // Convert yes position to stage-local
+    const yesLocalX = (yb.left - st.left) + (yb.width * 0.5);
+    const yesLocalY = (yb.top - st.top);
+
+    const left = clamp(yesLocalX + 18, PAD, st.width - nb.width - PAD);
+    const top  = clamp(yesLocalY, PAD, st.height - nb.height - PAD);
+    setNoPos(left, top);
+  }
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  function distancePointToRect(px, py, r) {
+    // distance from point to rectangle (0 if inside)
+    const dx = Math.max(r.left - px, 0, px - r.right);
+    const dy = Math.max(r.top - py, 0, py - r.bottom);
+    return Math.hypot(dx, dy);
+  }
+
+  function pickNewNoPosition() {
+    const st = getStageBounds();
+    const nb = rect(noBtn);
+
+    const current = getNoPos();
+    const step = lerp(MOVE_PX_MIN, MOVE_PX_MAX, Math.random());
+
+    // Convert bounds for local coordinate system
+    const minX = PAD;
+    const minY = PAD;
+    const maxX = st.width - nb.width - PAD;
+    const maxY = st.height - nb.height - PAD;
+
+    // Try random directions until it fits
+    for (let tries = 0; tries < 24; tries++) {
+      const d = DIRS[(Math.random() * DIRS.length) | 0];
+      const dx = d[0], dy = d[1];
+
+      let nx = current.left + dx * step;
+      let ny = current.top  + dy * step;
+
+      // Clamp to bounds; but if clamping changed too much, treat as invalid and retry
+      const clampedX = clamp(nx, minX, maxX);
+      const clampedY = clamp(ny, minY, maxY);
+
+      const movedEnough = (Math.abs(clampedX - current.left) + Math.abs(clampedY - current.top)) > 20;
+      if (!movedEnough) continue;
+
+      // Accept
+      setNoPos(clampedX, clampedY);
+      return;
+    }
+
+    // Fallback: random position inside bounds
+    const rx = lerp(minX, maxX, Math.random());
+    const ry = lerp(minY, maxY, Math.random());
+    setNoPos(rx, ry);
+  }
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // Pointer proximity handler (mouse + touch)
+  function handlePointerMove(clientX, clientY) {
+    // If final already shown, ignore
+    if (final.classList.contains("show")) return;
+
+    const nb = rect(noBtn);
+    const d = distancePointToRect(clientX, clientY, nb);
+    if (d <= PROXIMITY_PX) {
+      pickNewNoPosition();
+    }
+  }
+
+  // Mouse
+  window.addEventListener("mousemove", (e) => handlePointerMove(e.clientX, e.clientY), { passive: true });
+
+  // Touch: if user tries to tap near No, move it
+  window.addEventListener("touchstart", (e) => {
+    if (!e.touches || !e.touches[0]) return;
+    const t = e.touches[0];
+    handlePointerMove(t.clientX, t.clientY);
+  }, { passive: true });
+
+  // Also move on hover over card area (helps on trackpads)
+  card.addEventListener("pointermove", (e) => handlePointerMove(e.clientX, e.clientY), { passive: true });
+
+  // Yes button grows
+  function updateYesTransform() {
+    yesBtn.style.setProperty("--yes-scale", String(yesScale));
+    yesBtn.style.transform = `translate(-50%, 0) scale(${yesScale})`;
+  }
+
+  function takeoverIfBigEnough() {
+    // Condition: if Yes button covers card interior sufficiently, show final
+    const cb = rect(card);
+    const yb = rect(yesBtn);
+
+    const covers =
+      yb.left <= cb.left + 8 &&
+      yb.top  <= cb.top  + 8 &&
+      yb.right >= cb.right - 8 &&
+      yb.bottom >= cb.bottom - 8;
+
+    // Also allow threshold fallback (scale-based)
+    const scaleThreshold = 6.5;
+
+    if (covers || yesScale >= scaleThreshold) {
+      // Make Yes fill card nicely
+      final.classList.add("show");
+      helper.textContent = "Okay okay, I’ll stop running 😌";
+      noBtn.style.opacity = "0";
+      noBtn.style.transition = "opacity 160ms ease-out";
+      noBtn.style.display = "none";
+
+      // Smoothly expand Yes to fill card area
+      yesBtn.style.transition = "transform 220ms ease-out, border-radius 220ms ease-out";
+      yesBtn.style.left = "50%";
+      yesBtn.style.top = "50%";
+      yesBtn.style.transform = "translate(-50%, -50%) scale(1)";
+      yesBtn.style.width = "calc(100% - 0px)";
+      yesBtn.style.height = "calc(100% - 0px)";
+      yesBtn.style.minWidth = "0";
+      yesBtn.style.borderRadius = "18px";
+      yesBtn.textContent = ""; // let the final overlay message be the focus
+      yesBtn.style.boxShadow = "none";
+      yesBtn.style.cursor = "default";
+      yesBtn.disabled = true;
+    }
+  }
+
+  yesBtn.addEventListener("click", () => {
+    if (final.classList.contains("show")) return;
+
+    yesScale *= 1.25;             // multiply by 1.25 each click
+    updateYesTransform();
+    takeoverIfBigEnough();
+  });
+
+  // Initial placement after first layout
+  function bootLayout() {
+    // Convert No from the initial CSS transform into absolute coordinates.
+    // We position it properly inside stage (absolute left/top).
+    noBtn.style.transform = "none";
+
+    // Ensure Yes has explicit transform baseline
+    updateYesTransform();
+
+    // Give the browser one tick to layout, then place No
+    requestAnimationFrame(() => {
+      initNoPositionNearYes();
+    });
+  }
+
+  bootLayout();
+})();
 </script>
 </body>
 </html>
