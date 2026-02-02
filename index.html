@@ -52,7 +52,6 @@
       background:
         radial-gradient(closest-side at 50% 45%, rgba(255, 60, 140, 0.14), rgba(0,0,0,0) 65%),
         radial-gradient(closest-side at 52% 55%, rgba(120, 190, 255, 0.10), rgba(0,0,0,0) 70%);
-      filter: blur(0px);
     }
 
     /* Center overlay */
@@ -75,6 +74,10 @@
       padding: var(--pad);
       position: relative;
       overflow: hidden; /* keep runaway button inside visual */
+    }
+
+    .textBlock{
+      display: block;
     }
 
     .top {
@@ -109,11 +112,20 @@
       user-select: none;
     }
 
+    .hint {
+      margin-top: 14px;
+      text-align: center;
+      color: rgba(0,0,0,0.45);
+      font-size: 12px;
+      user-select: none;
+    }
+
     /* Button stage */
     .btn-stage {
       position: relative;
       height: calc(var(--btn-h) + 120px);
       margin-top: 4px;
+      z-index: 2; /* above base card */
     }
 
     /* Base button styling */
@@ -132,7 +144,7 @@
       user-select: none;
       -webkit-tap-highlight-color: transparent;
       transform-origin: center center;
-      will-change: transform, left, top;
+      will-change: transform, left, top, width, height, border-radius;
     }
 
     /* Yes button: pill, gradient, gentle shadow */
@@ -147,12 +159,18 @@
       box-shadow:
         0 10px 22px rgba(255, 45, 120, 0.30),
         0 2px 0 rgba(255,255,255,0.35) inset;
-      transition: transform 160ms ease-out;
+      transition:
+        transform 160ms ease-out,
+        left 220ms ease-out,
+        top 220ms ease-out,
+        width 220ms ease-out,
+        height 220ms ease-out,
+        border-radius 220ms ease-out,
+        box-shadow 220ms ease-out;
+      z-index: 3;
     }
 
-    #yesBtn:active { transform: translate(-50%, 0) scale(var(--yes-scale, 1)); filter: brightness(0.98); }
-
-    /* No button: absolute within stage, light gray, cannot be clicked */
+    /* No button: absolute within stage, light gray, NEVER clickable */
     #noBtn {
       position: absolute;
       left: 50%;
@@ -163,10 +181,11 @@
       color: rgba(0,0,0,0.75);
       box-shadow: 0 10px 18px rgba(0,0,0,0.10);
       pointer-events: none; /* NEVER clickable */
-      transition: left 160ms ease-out, top 160ms ease-out;
+      transition: left 160ms ease-out, top 160ms ease-out, opacity 160ms ease-out;
+      z-index: 3;
     }
 
-    /* Final takeover state */
+    /* Final takeover overlay */
     .final {
       position: absolute;
       inset: 0;
@@ -175,467 +194,28 @@
       justify-content: center;
       font-weight: 900;
       font-size: clamp(28px, 4.5vw, 44px);
-      background: radial-gradient(closest-side at 50% 45%, rgba(255,70,150,0.18), rgba(255,255,255,1) 60%);
+      color: #111;
+      background:
+        radial-gradient(closest-side at 50% 48%,
+          rgba(255, 70, 150, 0.20),
+          rgba(255,255,255,1) 62%);
       opacity: 0;
-      transform: scale(0.98);
+      transform: scale(0.985);
       transition: opacity 220ms ease-out, transform 220ms ease-out;
       pointer-events: none;
+      z-index: 5; /* ensure it is on top of everything */
     }
     .final.show {
       opacity: 1;
       transform: scale(1);
     }
 
-    /* Small footer hint (optional) */
-    .hint {
-      margin-top: 14px;
-      text-align: center;
-      color: rgba(0,0,0,0.45);
-      font-size: 12px;
-      user-select: none;
-    }
-
-    @media (max-width: 420px) {
-      :root { --pad: 22px; --btn-w: 132px; --btn-h: 42px; }
-      .btn-stage { height: calc(var(--btn-h) + 130px); }
-    }
-  </style>
-</head>
-
-<body>
-  <canvas id="star"></canvas>
-  <div class="glow"></div>
-
-  <div class="overlay">
-    <div class="card" id="card">
-      <div class="top" aria-hidden="true">
-        <!-- Minimal teddy (inline SVG, no external deps) -->
-        <svg class="teddy" viewBox="0 0 64 64" role="img" aria-label="teddy">
-          <defs>
-            <linearGradient id="g" x1="0" x2="1">
-              <stop offset="0" stop-color="#ff4d8d"/>
-              <stop offset="1" stop-color="#ff88b9"/>
-            </linearGradient>
-          </defs>
-          <circle cx="18" cy="18" r="10" fill="url(#g)" opacity="0.35"/>
-          <circle cx="46" cy="18" r="10" fill="url(#g)" opacity="0.35"/>
-          <circle cx="32" cy="30" r="20" fill="#ffffff" stroke="rgba(0,0,0,0.08)" stroke-width="2"/>
-          <circle cx="24" cy="28" r="3.2" fill="#111"/>
-          <circle cx="40" cy="28" r="3.2" fill="#111"/>
-          <path d="M30 34c1.6 2 2.4 2 4 0" stroke="#111" stroke-width="2.4" stroke-linecap="round"/>
-          <path d="M26 40c4 5 8 5 12 0" stroke="url(#g)" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.9"/>
-        </svg>
-      </div>
-
-      <h1>Will you be my valentine?</h1>
-
-      <div class="btn-stage" id="stage">
-        <button class="btn" id="yesBtn" type="button">Yes</button>
-        <button class="btn" id="noBtn" type="button" aria-hidden="true">No</button>
-      </div>
-
-      <div class="helper" id="helper">“No” seems a bit shy 😈</div>
-      <div class="hint">Tip: try to click “No”.</div>
-
-      <div class="final" id="final">Yay! 💖</div>
-    </div>
-  </div>
-
-<script>
-/* =========================================================
-   STARFIELD (3D projection, streaks, slow warp)
-   ========================================================= */
-(() => {
-  const canvas = document.getElementById("star");
-  const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-
-  // Settings tuned for AMOLED cleanliness
-  const S = {
-    starCount: 2200,
-    speed: 0.60,            // slow
-    fov: 650,
-    zMin: 0.20,
-    zMax: 3.00,
-    trailStrength: 0.12,    // overlay alpha (higher = more fade)
-    streakMultiplier: 1.25,
-    dotProbability: 0.30,
-    coolTint: [190, 215, 255],
-    tintChance: 0.22,
-    dprCap: 2
-  };
-
-  let w = 0, h = 0, cx = 0, cy = 0, dpr = 1;
-
-  // Typed arrays for performance
-  let x, y, z, px, py, hasPrev, dotOnly, tinted;
-
-  function clamp01(v){ return v < 0 ? 0 : (v > 1 ? 1 : v); }
-  function lerp(a,b,t){ return a + (b-a)*t; }
-
-  function resize() {
-    w = window.innerWidth;
-    h = window.innerHeight;
-
-    dpr = Math.max(1, Math.min(S.dprCap, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(w * dpr);
-    canvas.height = Math.floor(h * dpr);
-    canvas.style.width = "100%";
-    canvas.style.height = "100%";
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    cx = w * 0.5;
-    cy = h * 0.5;
-
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, w, h);
-
-    // Re-seed distribution on resize
-    initStars(S.starCount);
-  }
-
-  function initStars(n) {
-    x = new Float32Array(n);
-    y = new Float32Array(n);
-    z = new Float32Array(n);
-    px = new Float32Array(n);
-    py = new Float32Array(n);
-    hasPrev = new Uint8Array(n);
-    dotOnly = new Uint8Array(n);
-    tinted = new Uint8Array(n);
-
-    for (let i = 0; i < n; i++) spawn(i);
-  }
-
-  function spawn(i) {
-    // Spawn using random screen point then reverse-project into world
-    const sx = Math.random() * w;
-    const sy = Math.random() * h;
-    const z0 = lerp(S.zMax * 0.75, S.zMax, Math.random());
-
-    x[i] = (sx - cx) * z0 / S.fov;
-    y[i] = (sy - cy) * z0 / S.fov;
-    z[i] = z0;
-
-    hasPrev[i] = 0;
-    dotOnly[i] = (Math.random() < S.dotProbability) ? 1 : 0;
-    tinted[i] = (Math.random() < S.tintChance) ? 1 : 0;
-  }
-
-  let last = performance.now();
-
-  function draw(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-
-    // Trails: semi-transparent black overlay
-    ctx.globalAlpha = clamp01(S.trailStrength);
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, w, h);
-
-    // Prepare for star draw
-    ctx.globalAlpha = 1;
-    ctx.lineCap = "round";
-
-    const margin = 80;
-    const invFar = 1 / S.zMax;
-    const invNear = 1 / S.zMin;
-    const invSpan = (invNear - invFar) || 1;
-
-    for (let i = 0; i < z.length; i++) {
-      let zi = z[i] - S.speed * dt;
-      z[i] = zi;
-
-      if (zi <= S.zMin) { spawn(i); continue; }
-
-      const invz = 1 / zi;
-      const sx = cx + (x[i] * invz) * S.fov;
-      const sy = cy + (y[i] * invz) * S.fov;
-
-      if (sx < -margin || sx > w + margin || sy < -margin || sy > h + margin) {
-        spawn(i); continue;
-      }
-
-      // closeness 0..1 based on 1/z
-      let closeness = (invz - invFar) / invSpan;
-      if (closeness < 0) closeness = 0;
-      else if (closeness > 1) closeness = 1;
-
-      // Subtle alpha/thickness
-      const a = (50 + (220 - 50) * closeness) / 255;
-      const thickness = (closeness > 0.72) ? 2 : 1;
-
-      // Color: mostly white, some cool tint
-      if (tinted[i]) {
-        const c = S.coolTint;
-        ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-        ctx.fillStyle   = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-      } else {
-        ctx.strokeStyle = `rgba(255,255,255,${a})`;
-        ctx.fillStyle   = `rgba(255,255,255,${a})`;
-      }
-
-      const ix = sx | 0;
-      const iy = sy | 0;
-
-      if (dotOnly[i]) {
-        const r = (closeness > 0.75) ? 2 : 1;
-        ctx.beginPath();
-        ctx.arc(ix, iy, r, 0, Math.PI * 2);
-        ctx.fill();
-        px[i] = sx; py[i] = sy; hasPrev[i] = 1;
-        continue;
-      }
-
-      if (hasPrev[i]) {
-        const dx = sx - px[i];
-        const dy = sy - py[i];
-
-        // Slightly extend streak behind motion; scale a bit with closeness
-        const mult = S.streakMultiplier * (1 + closeness * 0.55);
-        const sx0 = sx - dx * mult;
-        const sy0 = sy - dy * mult;
-
-        ctx.lineWidth = thickness;
-        ctx.beginPath();
-        ctx.moveTo(sx0, sy0);
-        ctx.lineTo(sx, sy);
-        ctx.stroke();
-
-        // Tiny head sparkle for closer stars
-        if (closeness > 0.55) {
-          ctx.beginPath();
-          ctx.arc(ix, iy, 1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else {
-        ctx.beginPath();
-        ctx.arc(ix, iy, 1, 0, Math.PI * 2);
-        ctx.fill();
-        hasPrev[i] = 1;
-      }
-
-      px[i] = sx;
-      py[i] = sy;
-    }
-
-    requestAnimationFrame(draw);
-  }
-
-  window.addEventListener("resize", resize, { passive: true });
-
-  resize();
-  requestAnimationFrame(draw);
-})();
-
-
-/* =========================================================
-   VALENTINE UI INTERACTIVITY
-   - No button runs away (8 directions, never clickable)
-   - Yes button grows by 1.25x per click; eventually takes over
-   ========================================================= */
-(() => {
-  const card = document.getElementById("card");
-  const stage = document.getElementById("stage");
-  const yesBtn = document.getElementById("yesBtn");
-  const noBtn = document.getElementById("noBtn");
-  const final = document.getElementById("final");
-  const helper = document.getElementById("helper");
-
-  // Runaway config
-  const PROXIMITY_PX = 80;   // cursor distance threshold
-  const MOVE_PX_MIN = 70;    // jump step
-  const MOVE_PX_MAX = 120;
-  const PAD = 14;            // inner padding boundary (stage)
-  const TRANS_MS = 160;      // 120-200ms
-  noBtn.style.transitionDuration = TRANS_MS + "ms";
-
-  // 8 directions: dx,dy (unit)
-  const DIRS = [
-    [ 0, -1], [ 0,  1], [-1,  0], [ 1,  0],
-    [-1, -1], [ 1, -1], [-1,  1], [ 1,  1],
-  ];
-
-  // Keep absolute positioning stable: compute base positions after layout
-  let yesScale = 1;
-
-  function rect(el) { return el.getBoundingClientRect(); }
-
-  function getStageBounds() {
-    const r = rect(stage);
-    return { left: r.left, top: r.top, width: r.width, height: r.height };
-  }
-
-  function getNoPos() {
-    // left/top are relative to stage
-    const left = parseFloat(getComputedStyle(noBtn).left || "0");
-    const top  = parseFloat(getComputedStyle(noBtn).top  || "0");
-    return { left, top };
-  }
-
-  function setNoPos(left, top) {
-    noBtn.style.left = left + "px";
-    noBtn.style.top = top + "px";
-  }
-
-  function initNoPositionNearYes() {
-    // Place No near the Yes in initial layout, but inside stage
-    const st = getStageBounds();
-    const nb = rect(noBtn);
-    const yb = rect(yesBtn);
-
-    // Convert yes position to stage-local
-    const yesLocalX = (yb.left - st.left) + (yb.width * 0.5);
-    const yesLocalY = (yb.top - st.top);
-
-    const left = clamp(yesLocalX + 18, PAD, st.width - nb.width - PAD);
-    const top  = clamp(yesLocalY, PAD, st.height - nb.height - PAD);
-    setNoPos(left, top);
-  }
-
-  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
-
-  function distancePointToRect(px, py, r) {
-    // distance from point to rectangle (0 if inside)
-    const dx = Math.max(r.left - px, 0, px - r.right);
-    const dy = Math.max(r.top - py, 0, py - r.bottom);
-    return Math.hypot(dx, dy);
-  }
-
-  function pickNewNoPosition() {
-    const st = getStageBounds();
-    const nb = rect(noBtn);
-
-    const current = getNoPos();
-    const step = lerp(MOVE_PX_MIN, MOVE_PX_MAX, Math.random());
-
-    // Convert bounds for local coordinate system
-    const minX = PAD;
-    const minY = PAD;
-    const maxX = st.width - nb.width - PAD;
-    const maxY = st.height - nb.height - PAD;
-
-    // Try random directions until it fits
-    for (let tries = 0; tries < 24; tries++) {
-      const d = DIRS[(Math.random() * DIRS.length) | 0];
-      const dx = d[0], dy = d[1];
-
-      let nx = current.left + dx * step;
-      let ny = current.top  + dy * step;
-
-      // Clamp to bounds; but if clamping changed too much, treat as invalid and retry
-      const clampedX = clamp(nx, minX, maxX);
-      const clampedY = clamp(ny, minY, maxY);
-
-      const movedEnough = (Math.abs(clampedX - current.left) + Math.abs(clampedY - current.top)) > 20;
-      if (!movedEnough) continue;
-
-      // Accept
-      setNoPos(clampedX, clampedY);
-      return;
-    }
-
-    // Fallback: random position inside bounds
-    const rx = lerp(minX, maxX, Math.random());
-    const ry = lerp(minY, maxY, Math.random());
-    setNoPos(rx, ry);
-  }
-
-  function lerp(a, b, t) { return a + (b - a) * t; }
-
-  // Pointer proximity handler (mouse + touch)
-  function handlePointerMove(clientX, clientY) {
-    // If final already shown, ignore
-    if (final.classList.contains("show")) return;
-
-    const nb = rect(noBtn);
-    const d = distancePointToRect(clientX, clientY, nb);
-    if (d <= PROXIMITY_PX) {
-      pickNewNoPosition();
-    }
-  }
-
-  // Mouse
-  window.addEventListener("mousemove", (e) => handlePointerMove(e.clientX, e.clientY), { passive: true });
-
-  // Touch: if user tries to tap near No, move it
-  window.addEventListener("touchstart", (e) => {
-    if (!e.touches || !e.touches[0]) return;
-    const t = e.touches[0];
-    handlePointerMove(t.clientX, t.clientY);
-  }, { passive: true });
-
-  // Also move on hover over card area (helps on trackpads)
-  card.addEventListener("pointermove", (e) => handlePointerMove(e.clientX, e.clientY), { passive: true });
-
-  // Yes button grows
-  function updateYesTransform() {
-    yesBtn.style.setProperty("--yes-scale", String(yesScale));
-    yesBtn.style.transform = `translate(-50%, 0) scale(${yesScale})`;
-  }
-
-  function takeoverIfBigEnough() {
-    // Condition: if Yes button covers card interior sufficiently, show final
-    const cb = rect(card);
-    const yb = rect(yesBtn);
-
-    const covers =
-      yb.left <= cb.left + 8 &&
-      yb.top  <= cb.top  + 8 &&
-      yb.right >= cb.right - 8 &&
-      yb.bottom >= cb.bottom - 8;
-
-    // Also allow threshold fallback (scale-based)
-    const scaleThreshold = 6.5;
-
-    if (covers || yesScale >= scaleThreshold) {
-      // Make Yes fill card nicely
-      final.classList.add("show");
-      helper.textContent = "Okay okay, I’ll stop running 😌";
-      noBtn.style.opacity = "0";
-      noBtn.style.transition = "opacity 160ms ease-out";
-      noBtn.style.display = "none";
-
-      // Smoothly expand Yes to fill card area
-      yesBtn.style.transition = "transform 220ms ease-out, border-radius 220ms ease-out";
-      yesBtn.style.left = "50%";
-      yesBtn.style.top = "50%";
-      yesBtn.style.transform = "translate(-50%, -50%) scale(1)";
-      yesBtn.style.width = "calc(100% - 0px)";
-      yesBtn.style.height = "calc(100% - 0px)";
-      yesBtn.style.minWidth = "0";
-      yesBtn.style.borderRadius = "18px";
-      yesBtn.textContent = ""; // let the final overlay message be the focus
-      yesBtn.style.boxShadow = "none";
-      yesBtn.style.cursor = "default";
-      yesBtn.disabled = true;
-    }
-  }
-
-  yesBtn.addEventListener("click", () => {
-    if (final.classList.contains("show")) return;
-
-    yesScale *= 1.25;             // multiply by 1.25 each click
-    updateYesTransform();
-    takeoverIfBigEnough();
-  });
-
-  // Initial placement after first layout
-  function bootLayout() {
-    // Convert No from the initial CSS transform into absolute coordinates.
-    // We position it properly inside stage (absolute left/top).
-    noBtn.style.transform = "none";
-
-    // Ensure Yes has explicit transform baseline
-    updateYesTransform();
-
-    // Give the browser one tick to layout, then place No
-    requestAnimationFrame(() => {
-      initNoPositionNearYes();
-    });
-  }
-
-  bootLayout();
-})();
-</script>
-</body>
-</html>
+    /* DONE state: remove old text entirely; stage becomes full-card; Yes fills card */
+    .card.done .textBlock { display: none; }
+
+    .card.done .btn-stage{
+      position: absolute;
+      inset: 0;
+      height: auto;
+      margin: 0;
+      z-index: 4; /* beneath final overlay but above base */
